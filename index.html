@@ -245,11 +245,12 @@ async function initAuth(){
   }
 
   const email = state.authUser.email;
-  const { data: perfil, error } = await supabaseClient
-    .from('usuarios')
-    .select('*')
-    .ilike('email', email)
-    .maybeSingle();
+const { data: perfil, error } = await supabaseClient
+  .from('perfis_usuarios')
+  .select('*')
+  .ilike('email', email)
+  .eq('ativo', true)
+  .maybeSingle();
 
   if(error || !perfil){
     await supabaseClient.auth.signOut();
