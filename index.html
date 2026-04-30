@@ -68,7 +68,7 @@
 
   <div id="authView" class="card authbox">
     <h2>Acesso ao sistema</h2>
-    <div class="notice">Entre com o e-mail e a senha cadastrados no Supabase Auth. O perfil operacional deve existir na tabela <b>usuarios</b>.</div>
+    <div class="notice">Entre com o e-mail e a senha cadastrados no Supabase Auth. O perfil operacional deve existir na tabela <b>perfis_usuarios</b>.</div>
     <label>E-mail</label>
     <input id="loginEmail" type="email" placeholder="seu.email@dominio.gov.br">
     <label>Senha</label>
@@ -245,16 +245,16 @@ async function initAuth(){
   }
 
   const email = state.authUser.email;
-const { data: perfil, error } = await supabaseClient
-  .from('perfis_usuarios')
-  .select('*')
-  .ilike('email', email)
-  .eq('ativo', true)
-  .maybeSingle();
+  const { data: perfil, error } = await supabaseClient
+    .from('perfis_usuarios')
+    .select('*')
+    .eq('auth_user_id', state.authUser.id)
+    .eq('ativo', true)
+    .maybeSingle();
 
   if(error || !perfil){
     await supabaseClient.auth.signOut();
-    msg('Usuário autenticado, mas sem perfil operacional cadastrado na tabela usuarios. Peça ao administrador para cadastrar este e-mail.','error');
+    msg('Usuário autenticado, mas sem perfil operacional ativo na tabela perfis_usuarios. Confira se o auth_user_id do perfil é igual ao UID do Authentication Users.','error');
     return;
   }
 
@@ -274,7 +274,7 @@ const { data: perfil, error } = await supabaseClient
 
 async function loadData(){
   let qTarefas = supabaseClient.from('tarefas').select('*').order('created_at',{ascending:false});
-  let qUsuarios = supabaseClient.from('usuarios').select('*').order('nome',{ascending:true});
+  let qUsuarios = supabaseClient.from('perfis_usuarios').select('*').order('nome',{ascending:true});
   let qBase = supabaseClient.from('base_cnpj').select('*').order('created_at',{ascending:false});
 
   const [rt, ru, rb] = await Promise.all([qTarefas, qUsuarios, qBase]);
@@ -322,7 +322,7 @@ async function addUsuario(){
   if(!requireAdmin()) return;
   const nome=userNome.value.trim(), email=userEmail.value.trim().toLowerCase(), setor=userSetor.value.trim(), perfil=userPerfil.value;
   if(!nome||!email) return msg('Informe nome e e-mail.','error');
-  const { error } = await supabaseClient.from('usuarios').insert({ nome,email,setor,perfil });
+  const { error } = await supabaseClient.from('perfis_usuarios').insert({ nome,email,setor,perfil });
   if(error) return msg(error.message,'error');
   userNome.value=userEmail.value=userSetor.value='';
   msg('Usuário cadastrado. Lembre-se de criar também o login no Supabase Auth, se ainda não existir.');
@@ -331,7 +331,7 @@ async function addUsuario(){
 
 async function delUsuario(id){
   if(!requireAdmin() || !confirm('Excluir usuário?')) return;
-  const { error } = await supabaseClient.from('usuarios').delete().eq('id',id);
+  const { error } = await supabaseClient.from('perfis_usuarios').delete().eq('id',id);
   if(error) return msg(error.message,'error');
   await loadData();
 }
