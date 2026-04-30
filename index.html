@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Distribuição de CNPJ - Manutenção de IE</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    :root { --bg:#f4f6f8; --card:#fff; --text:#1f2937; --muted:#6b7280; --primary:#1d4ed8; --danger:#b91c1c; --ok:#047857; --border:#d1d5db; }
+    :root { --bg:#f4f6f8; --card:#fff; --text:#1f2937; --muted:#6b7280; --primary:#1d4ed8; --danger:#b91c1c; --ok:#047857; --border:#d1d5db; --dark:#0f172a; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: Arial, Helvetica, sans-serif; background:var(--bg); color:var(--text); }
-    header { background:#0f172a; color:white; padding:18px 24px; }
+    header { background:var(--dark); color:white; padding:18px 24px; display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap; }
     header h1 { margin:0; font-size:22px; }
     header p { margin:6px 0 0; color:#cbd5e1; font-size:14px; }
     main { max-width:1280px; margin:22px auto; padding:0 16px; }
@@ -26,6 +27,7 @@
     button.primary { background:var(--primary); color:white; }
     button.danger { background:var(--danger); color:white; }
     button.ok { background:var(--ok); color:white; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
     .row { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; }
     .row3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
     .row2 { display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; }
@@ -38,42 +40,62 @@
     .EM_ANDAMENTO { background:#fef3c7; color:#92400e; }
     .DET_ENVIADO { background:#dbeafe; color:#1e40af; }
     .IE_SUSPENSA { background:#dcfce7; color:#166534; }
-    .stats { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; }
+    .stats { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; margin-top:12px; }
     .stat { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:12px; }
     .stat b { display:block; font-size:24px; margin-top:4px; }
     .muted { color:var(--muted); font-size:13px; }
-    .hidden { display:none; }
+    .hidden { display:none !important; }
     .notice { background:#eff6ff; border:1px solid #bfdbfe; padding:10px; border-radius:10px; font-size:13px; margin:10px 0; }
     .error { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:10px; border-radius:10px; font-size:13px; margin:10px 0; }
     .success { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:10px; border-radius:10px; font-size:13px; margin:10px 0; }
-    @media(max-width:900px){ .grid,.row,.row2,.row3,.stats{ grid-template-columns:1fr; } .side{ position:static; } }
+    .authbox { max-width:460px; margin:60px auto; }
+    .top-user { font-size:13px; color:#e5e7eb; text-align:right; }
+    .admin-only-lock { display:none; }
+    @media(max-width:900px){ .grid,.row,.row2,.row3,.stats{ grid-template-columns:1fr; } .side{ position:static; } header{align-items:flex-start;} }
   </style>
 </head>
 <body>
 <header>
-  <h1>Distribuição de CNPJ – Manutenção de Inscrição Estadual</h1>
-  <p>Controle simples de tarefas, competências, usuários, distribuição de CNPJs e acompanhamento de status.</p>
+  <div>
+    <h1>Distribuição de CNPJ – Manutenção de Inscrição Estadual</h1>
+    <p>Controle de tarefas, competências, usuários, distribuição de CNPJs e acompanhamento de status com Supabase.</p>
+  </div>
+  <div class="top-user" id="topUser"></div>
 </header>
+
 <main>
-  <div class="grid">
+  <div id="msg"></div>
+
+  <div id="authView" class="card authbox">
+    <h2>Acesso ao sistema</h2>
+    <div class="notice">Entre com o e-mail e a senha cadastrados no Supabase Auth. O perfil operacional deve existir na tabela <b>usuarios</b>.</div>
+    <label>E-mail</label>
+    <input id="loginEmail" type="email" placeholder="seu.email@dominio.gov.br">
+    <label>Senha</label>
+    <input id="loginSenha" type="password" placeholder="Senha">
+    <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+      <button class="primary" onclick="signIn()">Entrar</button>
+      <button onclick="signUp()">Criar conta com este e-mail</button>
+    </div>
+  </div>
+
+  <div id="appView" class="grid hidden">
     <aside class="side">
-      <button onclick="show('dashboard')">📊 Painel do Administrador</button>
-      <button onclick="show('tarefas')">🗂️ Cadastrar Tarefas</button>
-      <button onclick="show('usuarios')">👤 Cadastrar Usuários</button>
-      <button onclick="show('importar')">📥 Importar CNPJs</button>
-      <button onclick="show('distribuir')">🔀 Distribuir CNPJs</button>
+      <button onclick="show('dashboard')">📊 Painel</button>
+      <button class="admin-only" onclick="show('tarefas')">🗂️ Cadastrar Tarefas</button>
+      <button class="admin-only" onclick="show('usuarios')">👤 Cadastrar Usuários</button>
+      <button class="admin-only" onclick="show('importar')">📥 Importar CNPJs</button>
+      <button class="admin-only" onclick="show('distribuir')">🔀 Distribuir CNPJs</button>
       <button onclick="show('analista')">✅ Tela do Analista</button>
-      <button onclick="show('relatorios')">📤 Relatórios / Exportação</button>
+      <button onclick="show('relatorios')">📤 Relatórios</button>
       <hr>
-      <button class="danger" onclick="resetAll()">🧹 Limpar Base Local</button>
-      <p class="muted">Os dados ficam salvos no navegador deste computador via localStorage.</p>
+      <button onclick="signOut()">🚪 Sair</button>
+      <p class="muted">Os dados ficam salvos no Supabase e são compartilhados entre os usuários autorizados.</p>
     </aside>
 
     <section>
-      <div id="msg"></div>
-
       <div id="dashboard" class="card view">
-        <h2>Painel do Administrador</h2>
+        <h2>Painel</h2>
         <div class="row3">
           <div><label>Filtrar por tarefa</label><select id="filtroTarefa" onchange="renderDashboard()"></select></div>
           <div><label>Filtrar por competência</label><input id="filtroCompetencia" oninput="renderDashboard()" placeholder="Ex.: Maio/2026"></div>
@@ -84,7 +106,7 @@
         <div class="table-wrap"><table id="tblDashboard"></table></div>
       </div>
 
-      <div id="tarefas" class="card view hidden">
+      <div id="tarefas" class="card view hidden admin-only-lock">
         <h2>Cadastro de Tarefas</h2>
         <div class="row2">
           <div><label>Nome da tarefa</label><input id="tarefaNome" placeholder="Ex.: Manutenção de IE – IN 004/2020"></div>
@@ -100,8 +122,9 @@
         <div class="table-wrap"><table id="tblTarefas"></table></div>
       </div>
 
-      <div id="usuarios" class="card view hidden">
+      <div id="usuarios" class="card view hidden admin-only-lock">
         <h2>Cadastro de Usuários</h2>
+        <div class="notice">Este cadastro cria o perfil operacional. Para o login funcionar, o usuário também precisa existir no Supabase Auth com o mesmo e-mail.</div>
         <div class="row">
           <div><label>Nome</label><input id="userNome"></div>
           <div><label>E-mail institucional</label><input id="userEmail"></div>
@@ -113,9 +136,9 @@
         <div class="table-wrap"><table id="tblUsuarios"></table></div>
       </div>
 
-      <div id="importar" class="card view hidden">
+      <div id="importar" class="card view hidden admin-only-lock">
         <h2>Importar CNPJs</h2>
-        <div class="notice">Importe arquivo CSV separado por ponto e vírgula ou vírgula. Cabeçalho esperado: CNPJ;IE;RAZAO_SOCIAL;MUNICIPIO. A aplicação valida duplicidade por CNPJ + tarefa + competência.</div>
+        <div class="notice">Importe CSV separado por ponto e vírgula ou vírgula. Cabeçalho esperado: CNPJ;IE;RAZAO_SOCIAL;MUNICIPIO.</div>
         <div class="row2">
           <div><label>Tarefa</label><select id="importTarefa"></select></div>
           <div><label>Competência</label><input id="importCompetencia" placeholder="Ex.: Maio/2026"></div>
@@ -127,7 +150,7 @@
 12345678000199;000000001;EMPRESA EXEMPLO LTDA;PORTO VELHO</pre>
       </div>
 
-      <div id="distribuir" class="card view hidden">
+      <div id="distribuir" class="card view hidden admin-only-lock">
         <h2>Distribuir CNPJs</h2>
         <div class="row3">
           <div><label>Tarefa</label><select id="distTarefa"></select></div>
@@ -146,7 +169,7 @@
       <div id="analista" class="card view hidden">
         <h2>Tela do Analista</h2>
         <div class="row2">
-          <div><label>Selecione o analista</label><select id="analistaSelect" onchange="renderAnalista()"></select></div>
+          <div><label>Analista</label><select id="analistaSelect" onchange="renderAnalista()"></select></div>
           <div><label>Filtro de status</label><select id="analistaStatus" onchange="renderAnalista()"><option value="">Todos</option><option>PENDENTE</option><option>EM ANDAMENTO</option><option>DET ENVIADO</option><option>IE SUSPENSA</option></select></div>
         </div>
         <div class="table-wrap"><table id="tblAnalista"></table></div>
@@ -154,7 +177,7 @@
 
       <div id="relatorios" class="card view hidden">
         <h2>Relatórios / Exportação</h2>
-        <button class="ok" onclick="exportCSV()">Exportar base completa em CSV</button>
+        <button class="ok" onclick="exportCSV()">Exportar base visível em CSV</button>
         <button onclick="print()">Imprimir / Salvar em PDF</button>
         <h3>Resumo por analista</h3>
         <div class="table-wrap"><table id="tblResumo"></table></div>
@@ -162,46 +185,290 @@
     </section>
   </div>
 </main>
+
 <script>
+const SUPABASE_URL = 'https://rcdkgnpnvmzkjbfngxjr.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_SdIqIZ2vTM2zMHFWDI6sIQ_NYDJeMVg';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const STATUS = ['PENDENTE','EM ANDAMENTO','DET ENVIADO','IE SUSPENSA'];
-const store = {
-  get tarefas(){ return JSON.parse(localStorage.getItem('tarefas_cnpj')||'[]') },
-  set tarefas(v){ localStorage.setItem('tarefas_cnpj', JSON.stringify(v)) },
-  get usuarios(){ return JSON.parse(localStorage.getItem('usuarios_cnpj')||'[]') },
-  set usuarios(v){ localStorage.setItem('usuarios_cnpj', JSON.stringify(v)) },
-  get base(){ return JSON.parse(localStorage.getItem('base_cnpj')||'[]') },
-  set base(v){ localStorage.setItem('base_cnpj', JSON.stringify(v)) }
-};
-function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8) }
+let state = { session:null, authUser:null, perfil:null, isAdmin:false, tarefas:[], usuarios:[], base:[] };
+
 function onlyDigits(s){ return (s||'').replace(/\D/g,'') }
 function formatCNPJ(c){ c=onlyDigits(c); return c.length===14 ? c.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5') : c }
-function msg(text,type='success'){ document.getElementById('msg').innerHTML=`<div class="${type}">${text}</div>`; setTimeout(()=>document.getElementById('msg').innerHTML='',5000) }
-function show(id){ document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); refreshAll(); }
-function esc(x){ return String(x??'').replace(/[&<>]/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[s])) }
+function esc(x){ return String(x??'').replace(/[&<>"]/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])) }
+function msg(text,type='success'){ document.getElementById('msg').innerHTML=`<div class="${type}">${text}</div>`; setTimeout(()=>document.getElementById('msg').innerHTML='',6000) }
 function table(id, headers, rows){ document.getElementById(id).innerHTML = `<thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody>` }
-function fillSelect(id, arr, labelFn, valueFn, allLabel){ const el=document.getElementById(id); const val=el.value; el.innerHTML=(allLabel?`<option value="">${allLabel}</option>`:'')+arr.map(x=>`<option value="${esc(valueFn(x))}">${esc(labelFn(x))}</option>`).join(''); if([...el.options].some(o=>o.value===val)) el.value=val; }
-function addTarefa(){ const nome=tarefaNome.value.trim(), comp=tarefaCompetencia.value.trim(); if(!nome||!comp) return msg('Informe nome da tarefa e competência.','error'); let t=store.tarefas; t.push({id:uid(), nome, competencia:comp, inicio:tarefaInicio.value, fim:tarefaFim.value, descricao:tarefaDescricao.value}); store.tarefas=t; tarefaNome.value=tarefaCompetencia.value=tarefaInicio.value=tarefaFim.value=tarefaDescricao.value=''; msg('Tarefa cadastrada.'); refreshAll(); }
-function delTarefa(id){ if(!confirm('Excluir tarefa?'))return; store.tarefas=store.tarefas.filter(x=>x.id!==id); refreshAll(); }
-function addUsuario(){ const nome=userNome.value.trim(), email=userEmail.value.trim(), setor=userSetor.value.trim(), perfil=userPerfil.value; if(!nome||!email) return msg('Informe nome e e-mail.','error'); let u=store.usuarios; u.push({id:uid(), nome,email,setor,perfil}); store.usuarios=u; userNome.value=userEmail.value=userSetor.value=''; msg('Usuário cadastrado.'); refreshAll(); }
-function delUsuario(id){ if(!confirm('Excluir usuário?'))return; store.usuarios=store.usuarios.filter(x=>x.id!==id); refreshAll(); }
-function parseCSV(text){ const sep = text.includes(';') ? ';' : ','; const lines=text.split(/\r?\n/).filter(l=>l.trim()); const head=lines.shift().split(sep).map(h=>h.trim().toUpperCase()); return lines.map(l=>{ const p=l.split(sep).map(x=>x.trim()); let o={}; head.forEach((h,i)=>o[h]=p[i]||''); return o; }); }
-function importCSV(){ const tarefaId=importTarefa.value, comp=importCompetencia.value.trim(); const file=csvFile.files[0]; if(!tarefaId||!comp||!file) return msg('Informe tarefa, competência e arquivo CSV.','error'); const tarefa=store.tarefas.find(t=>t.id===tarefaId); const reader=new FileReader(); reader.onload=e=>{ const rows=parseCSV(e.target.result); let base=store.base, add=0, dup=0, invalid=0; rows.forEach(r=>{ const cnpj=onlyDigits(r.CNPJ); if(cnpj.length!==14){ invalid++; return; } const chave=`${cnpj}-${tarefaId}-${comp}`; if(base.some(b=>b.chave===chave)){ dup++; return; } base.push({id:uid(), chave, cnpj, ie:r.IE||'', razao:r.RAZAO_SOCIAL||r.RAZAO||'', municipio:r.MUNICIPIO||'', tarefaId, tarefaNome:tarefa.nome, competencia:comp, analistaId:'', analistaNome:'', status:'PENDENTE', observacao:'', dataDistribuicao:'', dataAtualizacao:new Date().toISOString().slice(0,10)}); add++; }); store.base=base; msg(`Importação concluída: ${add} incluídos, ${dup} duplicados ignorados, ${invalid} inválidos.`); refreshAll(); }; reader.readAsText(file,'UTF-8'); }
-function distribuir(){ const tarefaId=distTarefa.value, comp=distCompetencia.value.trim(), analistaId=distAnalista.value, qtd=parseInt(distQtd.value||'0'); if(!tarefaId||!comp||!analistaId||qtd<=0) return msg('Informe tarefa, competência, analista e quantidade.','error'); let base=store.base; let pool=base.filter(b=>b.tarefaId===tarefaId && b.competencia===comp && !b.analistaId); if(distModo.value==='aleatorio') pool=pool.sort(()=>Math.random()-.5); const user=store.usuarios.find(u=>u.id===analistaId); const sel=pool.slice(0,qtd).map(x=>x.id); base=base.map(b=>sel.includes(b.id)?{...b, analistaId:user.id, analistaNome:user.nome, dataDistribuicao:new Date().toISOString().slice(0,10)}:b); store.base=base; msg(`${sel.length} CNPJ(s) distribuído(s) para ${user.nome}.`); refreshAll(); }
-function updateStatus(id, status){ store.base=store.base.map(b=>b.id===id?{...b,status,dataAtualizacao:new Date().toISOString().slice(0,10)}:b); refreshAll(); }
-function updateObs(id, obs){ store.base=store.base.map(b=>b.id===id?{...b,observacao:obs,dataAtualizacao:new Date().toISOString().slice(0,10)}:b); }
-function removeItem(id){ if(!confirm('Remover este CNPJ da base?'))return; store.base=store.base.filter(b=>b.id!==id); refreshAll(); }
-function filteredBase(){ let b=store.base; const ft=filtroTarefa.value, fc=filtroCompetencia.value.trim().toLowerCase(), fa=filtroAnalista.value; if(ft)b=b.filter(x=>x.tarefaId===ft); if(fc)b=b.filter(x=>x.competencia.toLowerCase().includes(fc)); if(fa)b=b.filter(x=>x.analistaId===fa); return b; }
-function renderDashboard(){ const b=filteredBase(); const count=s=>b.filter(x=>x.status===s).length; stats.innerHTML=[['Total',b.length],['Pendente',count('PENDENTE')],['Em andamento',count('EM ANDAMENTO')],['DET enviado',count('DET ENVIADO')],['IE suspensa',count('IE SUSPENSA')]].map(x=>`<div class="stat"><span>${x[0]}</span><b>${x[1]}</b></div>`).join(''); table('tblDashboard',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Analista','Status'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefaNome)}</td><td>${esc(x.competencia)}</td><td>${esc(x.analistaNome||'Não distribuído')}</td><td><span class="pill ${x.status.replaceAll(' ','_')}">${x.status}</span></td></tr>`)); }
-function renderTarefas(){ table('tblTarefas',['Tarefa','Competência','Período','Descrição','Ação'], store.tarefas.map(t=>`<tr><td>${esc(t.nome)}</td><td>${esc(t.competencia)}</td><td>${esc(t.inicio)} a ${esc(t.fim)}</td><td>${esc(t.descricao)}</td><td><button class="danger" onclick="delTarefa('${t.id}')">Excluir</button></td></tr>`)); }
-function renderUsuarios(){ table('tblUsuarios',['Nome','E-mail','Setor/DRRE','Perfil','Ação'], store.usuarios.map(u=>`<tr><td>${esc(u.nome)}</td><td>${esc(u.email)}</td><td>${esc(u.setor)}</td><td>${esc(u.perfil)}</td><td><button class="danger" onclick="delUsuario('${u.id}')">Excluir</button></td></tr>`)); }
-function renderNaoDistribuidos(){ const tid=distTarefa.value, comp=distCompetencia.value.trim(); let b=store.base.filter(x=>!x.analistaId); if(tid)b=b.filter(x=>x.tarefaId===tid); if(comp)b=b.filter(x=>x.competencia===comp); table('tblNaoDistribuidos',['CNPJ','IE','Razão Social','Município','Competência'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.competencia)}</td></tr>`)); }
-function renderAnalista(){ const aid=analistaSelect.value, st=analistaStatus.value; let b=store.base.filter(x=>x.analistaId===aid); if(st)b=b.filter(x=>x.status===st); table('tblAnalista',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Status','Observação'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefaNome)}</td><td>${esc(x.competencia)}</td><td><select onchange="updateStatus('${x.id}',this.value)">${STATUS.map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`).join('')}</select></td><td><textarea onblur="updateObs('${x.id}',this.value)">${esc(x.observacao)}</textarea></td></tr>`)); }
-function renderResumo(){ const users=store.usuarios; const rows=users.map(u=>{ const b=store.base.filter(x=>x.analistaId===u.id); return `<tr><td>${esc(u.nome)}</td><td>${b.length}</td><td>${b.filter(x=>x.status==='PENDENTE').length}</td><td>${b.filter(x=>x.status==='EM ANDAMENTO').length}</td><td>${b.filter(x=>x.status==='DET ENVIADO').length}</td><td>${b.filter(x=>x.status==='IE SUSPENSA').length}</td></tr>`; }); table('tblResumo',['Analista','Total','Pendente','Em andamento','DET enviado','IE suspensa'], rows); }
-function refreshAll(){ const tarefas=store.tarefas, usuarios=store.usuarios; ['filtroTarefa','importTarefa','distTarefa'].forEach(id=>fillSelect(id,tarefas,t=>`${t.nome} | ${t.competencia}`,t=>t.id,id==='filtroTarefa'?'Todas':'')); ['filtroAnalista','distAnalista','analistaSelect'].forEach(id=>fillSelect(id,usuarios,u=>`${u.nome} (${u.perfil})`,u=>u.id,id==='filtroAnalista'?'Todos':'')); renderDashboard(); renderTarefas(); renderUsuarios(); renderNaoDistribuidos(); renderAnalista(); renderResumo(); }
-function exportCSV(){ const headers=['CNPJ','IE','RAZAO_SOCIAL','MUNICIPIO','TAREFA','COMPETENCIA','ANALISTA','STATUS','OBSERVACAO','DATA_DISTRIBUICAO','DATA_ATUALIZACAO']; const rows=store.base.map(b=>[formatCNPJ(b.cnpj),b.ie,b.razao,b.municipio,b.tarefaNome,b.competencia,b.analistaNome,b.status,b.observacao,b.dataDistribuicao,b.dataAtualizacao]); const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='relatorio_distribuicao_cnpj.csv'; a.click(); }
-function resetAll(){ if(confirm('Isso apagará todos os dados salvos neste navegador. Confirmar?')){ localStorage.removeItem('tarefas_cnpj'); localStorage.removeItem('usuarios_cnpj'); localStorage.removeItem('base_cnpj'); refreshAll(); msg('Base local apagada.'); } }
-document.getElementById('distTarefa').addEventListener('change', renderNaoDistribuidos); document.getElementById('distCompetencia').addEventListener('input', renderNaoDistribuidos);
-refreshAll();
+function fillSelect(id, arr, labelFn, valueFn, allLabel){ const el=document.getElementById(id); if(!el) return; const val=el.value; el.innerHTML=(allLabel?`<option value="">${allLabel}</option>`:'')+arr.map(x=>`<option value="${esc(valueFn(x))}">${esc(labelFn(x))}</option>`).join(''); if([...el.options].some(o=>o.value===val)) el.value=val; }
+function requireAdmin(){ if(!state.isAdmin){ msg('Acesso restrito ao perfil Administrador.','error'); show('dashboard'); return false; } return true; }
+function show(id){
+  if(['tarefas','usuarios','importar','distribuir'].includes(id) && !state.isAdmin) return requireAdmin();
+  document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+  refreshAll();
+}
+
+async function signIn(){
+  const email = loginEmail.value.trim();
+  const password = loginSenha.value;
+  if(!email || !password) return msg('Informe e-mail e senha.','error');
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if(error) return msg(error.message,'error');
+  await initAuth();
+}
+
+async function signUp(){
+  const email = loginEmail.value.trim();
+  const password = loginSenha.value;
+  if(!email || !password) return msg('Informe e-mail e senha.','error');
+  const { error } = await supabaseClient.auth.signUp({ email, password });
+  if(error) return msg(error.message,'error');
+  msg('Conta solicitada/criada. Se a confirmação por e-mail estiver ativa, confirme antes de entrar.');
+}
+
+async function signOut(){
+  await supabaseClient.auth.signOut();
+  state = { session:null, authUser:null, perfil:null, isAdmin:false, tarefas:[], usuarios:[], base:[] };
+  document.getElementById('appView').classList.add('hidden');
+  document.getElementById('authView').classList.remove('hidden');
+  document.getElementById('topUser').innerHTML='';
+}
+
+async function initAuth(){
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  state.session = session;
+  state.authUser = session?.user || null;
+  if(!state.authUser){
+    document.getElementById('authView').classList.remove('hidden');
+    document.getElementById('appView').classList.add('hidden');
+    return;
+  }
+
+  const email = state.authUser.email;
+  const { data: perfil, error } = await supabaseClient
+    .from('usuarios')
+    .select('*')
+    .ilike('email', email)
+    .maybeSingle();
+
+  if(error || !perfil){
+    await supabaseClient.auth.signOut();
+    msg('Usuário autenticado, mas sem perfil operacional cadastrado na tabela usuarios. Peça ao administrador para cadastrar este e-mail.','error');
+    return;
+  }
+
+  state.perfil = perfil;
+  state.isAdmin = perfil.perfil === 'Admin';
+  document.getElementById('authView').classList.add('hidden');
+  document.getElementById('appView').classList.remove('hidden');
+  document.getElementById('topUser').innerHTML = `${esc(perfil.nome)}<br><b>${esc(perfil.perfil)}</b> | ${esc(email)} <button onclick="signOut()" style="margin-left:8px;padding:6px 8px;">Sair</button>`;
+
+  document.querySelectorAll('.admin-only').forEach(el=>el.style.display = state.isAdmin ? 'block' : 'none');
+  document.querySelectorAll('.admin-only-lock').forEach(el=>{ if(!state.isAdmin) el.classList.add('hidden'); });
+
+  await loadData();
+  setupRealtime();
+  show(state.isAdmin ? 'dashboard' : 'analista');
+}
+
+async function loadData(){
+  let qTarefas = supabaseClient.from('tarefas').select('*').order('created_at',{ascending:false});
+  let qUsuarios = supabaseClient.from('usuarios').select('*').order('nome',{ascending:true});
+  let qBase = supabaseClient.from('base_cnpj').select('*').order('created_at',{ascending:false});
+
+  const [rt, ru, rb] = await Promise.all([qTarefas, qUsuarios, qBase]);
+
+  if(rt.error) msg('Erro ao carregar tarefas: '+rt.error.message,'error');
+  if(ru.error) msg('Erro ao carregar usuários: '+ru.error.message,'error');
+  if(rb.error) msg('Erro ao carregar base: '+rb.error.message,'error');
+
+  state.tarefas = rt.data || [];
+  state.usuarios = ru.data || [];
+  state.base = rb.data || [];
+  refreshAll();
+}
+
+let realtimeStarted = false;
+function setupRealtime(){
+  if(realtimeStarted) return;
+  realtimeStarted = true;
+  ['tarefas','usuarios','base_cnpj'].forEach(tbl=>{
+    supabaseClient.channel('changes_'+tbl)
+      .on('postgres_changes', { event:'*', schema:'public', table:tbl }, () => loadData())
+      .subscribe();
+  });
+}
+
+async function addTarefa(){
+  if(!requireAdmin()) return;
+  const nome=tarefaNome.value.trim(), comp=tarefaCompetencia.value.trim();
+  if(!nome||!comp) return msg('Informe nome da tarefa e competência.','error');
+  const { error } = await supabaseClient.from('tarefas').insert({ nome, competencia:comp, inicio:tarefaInicio.value||null, fim:tarefaFim.value||null, descricao:tarefaDescricao.value||'' });
+  if(error) return msg(error.message,'error');
+  tarefaNome.value=tarefaCompetencia.value=tarefaInicio.value=tarefaFim.value=tarefaDescricao.value='';
+  msg('Tarefa cadastrada.');
+  await loadData();
+}
+
+async function delTarefa(id){
+  if(!requireAdmin() || !confirm('Excluir tarefa?')) return;
+  const { error } = await supabaseClient.from('tarefas').delete().eq('id',id);
+  if(error) return msg(error.message,'error');
+  await loadData();
+}
+
+async function addUsuario(){
+  if(!requireAdmin()) return;
+  const nome=userNome.value.trim(), email=userEmail.value.trim().toLowerCase(), setor=userSetor.value.trim(), perfil=userPerfil.value;
+  if(!nome||!email) return msg('Informe nome e e-mail.','error');
+  const { error } = await supabaseClient.from('usuarios').insert({ nome,email,setor,perfil });
+  if(error) return msg(error.message,'error');
+  userNome.value=userEmail.value=userSetor.value='';
+  msg('Usuário cadastrado. Lembre-se de criar também o login no Supabase Auth, se ainda não existir.');
+  await loadData();
+}
+
+async function delUsuario(id){
+  if(!requireAdmin() || !confirm('Excluir usuário?')) return;
+  const { error } = await supabaseClient.from('usuarios').delete().eq('id',id);
+  if(error) return msg(error.message,'error');
+  await loadData();
+}
+
+function parseCSV(text){
+  const sep = text.includes(';') ? ';' : ',';
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  const head=lines.shift().split(sep).map(h=>h.trim().toUpperCase());
+  return lines.map(l=>{ const p=l.split(sep).map(x=>x.trim()); let o={}; head.forEach((h,i)=>o[h]=p[i]||''); return o; });
+}
+
+async function importCSV(){
+  if(!requireAdmin()) return;
+  const tarefaId=importTarefa.value, comp=importCompetencia.value.trim();
+  const file=csvFile.files[0];
+  if(!tarefaId||!comp||!file) return msg('Informe tarefa, competência e arquivo CSV.','error');
+  const tarefa=state.tarefas.find(t=>t.id===tarefaId);
+  const text = await file.text();
+  const rows=parseCSV(text);
+  const payload=[];
+  let invalid=0;
+  rows.forEach(r=>{
+    const cnpj=onlyDigits(r.CNPJ);
+    if(cnpj.length!==14){ invalid++; return; }
+    payload.push({
+      cnpj, ie:r.IE||'', razao:r.RAZAO_SOCIAL||r.RAZAO||'', municipio:r.MUNICIPIO||'',
+      tarefa_id:tarefaId, tarefa_nome:tarefa.nome, competencia:comp,
+      status:'PENDENTE', chave:`${cnpj}-${tarefaId}-${comp}`, data_atualizacao:new Date().toISOString().slice(0,10)
+    });
+  });
+  if(payload.length===0) return msg('Nenhum CNPJ válido encontrado.','error');
+  const { data, error } = await supabaseClient.from('base_cnpj').upsert(payload, { onConflict:'chave', ignoreDuplicates:true }).select('id');
+  if(error) return msg(error.message,'error');
+  msg(`Importação concluída. Registros processados: ${payload.length}. Inválidos: ${invalid}. Duplicados foram ignorados.`);
+  csvFile.value='';
+  await loadData();
+}
+
+async function distribuir(){
+  if(!requireAdmin()) return;
+  const tarefaId=distTarefa.value, comp=distCompetencia.value.trim(), analistaId=distAnalista.value, qtd=parseInt(distQtd.value||'0');
+  if(!tarefaId||!comp||!analistaId||qtd<=0) return msg('Informe tarefa, competência, analista e quantidade.','error');
+  let pool=state.base.filter(b=>b.tarefa_id===tarefaId && b.competencia===comp && !b.analista_id);
+  if(distModo.value==='aleatorio') pool=pool.sort(()=>Math.random()-.5);
+  const user=state.usuarios.find(u=>u.id===analistaId);
+  const ids=pool.slice(0,qtd).map(x=>x.id);
+  if(ids.length===0) return msg('Não há CNPJs disponíveis para essa tarefa/competência.','error');
+  const { error } = await supabaseClient.from('base_cnpj').update({
+    analista_id:user.id, analista_nome:user.nome, analista_email:user.email, data_distribuicao:new Date().toISOString().slice(0,10), data_atualizacao:new Date().toISOString().slice(0,10)
+  }).in('id',ids);
+  if(error) return msg(error.message,'error');
+  msg(`${ids.length} CNPJ(s) distribuído(s) para ${user.nome}.`);
+  await loadData();
+}
+
+async function updateStatus(id, status){
+  const { error } = await supabaseClient.from('base_cnpj').update({status, data_atualizacao:new Date().toISOString().slice(0,10)}).eq('id',id);
+  if(error) return msg(error.message,'error');
+  await loadData();
+}
+
+async function updateObs(id, obs){
+  const { error } = await supabaseClient.from('base_cnpj').update({observacao:obs, data_atualizacao:new Date().toISOString().slice(0,10)}).eq('id',id);
+  if(error) return msg(error.message,'error');
+}
+
+function filteredBase(){
+  let b=state.base;
+  const ft=filtroTarefa.value, fc=filtroCompetencia.value.trim().toLowerCase(), fa=filtroAnalista.value;
+  if(ft)b=b.filter(x=>x.tarefa_id===ft);
+  if(fc)b=b.filter(x=>(x.competencia||'').toLowerCase().includes(fc));
+  if(fa)b=b.filter(x=>x.analista_id===fa);
+  return b;
+}
+
+function renderDashboard(){
+  const b=filteredBase();
+  const count=s=>b.filter(x=>x.status===s).length;
+  stats.innerHTML=[['Total',b.length],['Pendente',count('PENDENTE')],['Em andamento',count('EM ANDAMENTO')],['DET enviado',count('DET ENVIADO')],['IE suspensa',count('IE SUSPENSA')]].map(x=>`<div class="stat"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
+  table('tblDashboard',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Analista','Status'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefa_nome)}</td><td>${esc(x.competencia)}</td><td>${esc(x.analista_nome||'Não distribuído')}</td><td><span class="pill ${String(x.status).replaceAll(' ','_')}">${esc(x.status)}</span></td></tr>`));
+}
+
+function renderTarefas(){
+  table('tblTarefas',['Tarefa','Competência','Período','Descrição','Ação'], state.tarefas.map(t=>`<tr><td>${esc(t.nome)}</td><td>${esc(t.competencia)}</td><td>${esc(t.inicio||'')} a ${esc(t.fim||'')}</td><td>${esc(t.descricao||'')}</td><td><button class="danger" onclick="delTarefa('${t.id}')">Excluir</button></td></tr>`));
+}
+
+function renderUsuarios(){
+  table('tblUsuarios',['Nome','E-mail','Setor/DRRE','Perfil','Ação'], state.usuarios.map(u=>`<tr><td>${esc(u.nome)}</td><td>${esc(u.email)}</td><td>${esc(u.setor||'')}</td><td>${esc(u.perfil)}</td><td><button class="danger" onclick="delUsuario('${u.id}')">Excluir</button></td></tr>`));
+}
+
+function renderNaoDistribuidos(){
+  const tid=distTarefa.value, comp=distCompetencia.value.trim();
+  let b=state.base.filter(x=>!x.analista_id);
+  if(tid)b=b.filter(x=>x.tarefa_id===tid);
+  if(comp)b=b.filter(x=>x.competencia===comp);
+  table('tblNaoDistribuidos',['CNPJ','IE','Razão Social','Município','Competência'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.competencia)}</td></tr>`));
+}
+
+function renderAnalista(){
+  const aid=analistaSelect.value, st=analistaStatus.value;
+  let b=state.base;
+  if(state.isAdmin && aid) b=b.filter(x=>x.analista_id===aid);
+  if(!state.isAdmin) b=b.filter(x=>(x.analista_email||'').toLowerCase() === (state.authUser.email||'').toLowerCase());
+  if(st)b=b.filter(x=>x.status===st);
+  table('tblAnalista',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Status','Observação'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefa_nome)}</td><td>${esc(x.competencia)}</td><td><select onchange="updateStatus('${x.id}',this.value)">${STATUS.map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`).join('')}</select></td><td><textarea onblur="updateObs('${x.id}',this.value)">${esc(x.observacao||'')}</textarea></td></tr>`));
+}
+
+function renderResumo(){
+  const users=state.usuarios;
+  const rows=users.map(u=>{
+    const b=state.base.filter(x=>x.analista_id===u.id);
+    return `<tr><td>${esc(u.nome)}</td><td>${b.length}</td><td>${b.filter(x=>x.status==='PENDENTE').length}</td><td>${b.filter(x=>x.status==='EM ANDAMENTO').length}</td><td>${b.filter(x=>x.status==='DET ENVIADO').length}</td><td>${b.filter(x=>x.status==='IE SUSPENSA').length}</td></tr>`;
+  });
+  table('tblResumo',['Analista','Total','Pendente','Em andamento','DET enviado','IE suspensa'], rows);
+}
+
+function refreshAll(){
+  const tarefas=state.tarefas, usuarios=state.usuarios;
+  ['filtroTarefa','importTarefa','distTarefa'].forEach(id=>fillSelect(id,tarefas,t=>`${t.nome} | ${t.competencia}`,t=>t.id,id==='filtroTarefa'?'Todas':''));
+  ['filtroAnalista','distAnalista'].forEach(id=>fillSelect(id,usuarios,u=>`${u.nome} (${u.perfil})`,u=>u.id,id==='filtroAnalista'?'Todos':''));
+  if(state.isAdmin) fillSelect('analistaSelect', usuarios, u=>`${u.nome} (${u.perfil})`, u=>u.id, 'Todos');
+  else fillSelect('analistaSelect', [state.perfil], u=>`${u.nome} (${u.perfil})`, u=>u.id, '');
+  renderDashboard(); renderTarefas(); renderUsuarios(); renderNaoDistribuidos(); renderAnalista(); renderResumo();
+}
+
+function exportCSV(){
+  const b=state.isAdmin ? state.base : state.base.filter(x=>(x.analista_email||'').toLowerCase() === (state.authUser.email||'').toLowerCase());
+  const headers=['CNPJ','IE','RAZAO_SOCIAL','MUNICIPIO','TAREFA','COMPETENCIA','ANALISTA','STATUS','OBSERVACAO','DATA_DISTRIBUICAO','DATA_ATUALIZACAO'];
+  const rows=b.map(x=>[formatCNPJ(x.cnpj),x.ie,x.razao,x.municipio,x.tarefa_nome,x.competencia,x.analista_nome,x.status,x.observacao,x.data_distribuicao,x.data_atualizacao]);
+  const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='relatorio_distribuicao_cnpj.csv'; a.click();
+}
+
+document.getElementById('distTarefa').addEventListener('change', renderNaoDistribuidos);
+document.getElementById('distCompetencia').addEventListener('input', renderNaoDistribuidos);
+supabaseClient.auth.onAuthStateChange((_event, _session) => initAuth());
+initAuth();
 </script>
 </body>
 </html>
