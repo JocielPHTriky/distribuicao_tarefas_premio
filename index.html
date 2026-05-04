@@ -173,6 +173,10 @@
           <div><label>Tarefa</label><select id="analistaTarefa" onchange="renderAnalista()"></select></div>
           <div><label>Filtro de status</label><select id="analistaStatus" onchange="renderAnalista()"><option value="">Todos</option><option>PENDENTE</option><option>EM ANDAMENTO</option><option>DET ENVIADO</option><option>IE SUSPENSA</option></select></div>
         </div>
+        <div style="display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap;">
+          <button onclick="limparFiltrosAcompanhamento()">Limpar filtros</button>
+          <span class="muted" id="analistaResumoFiltro"></span>
+        </div>
         <div class="table-wrap"><table id="tblAnalista"></table></div>
       </div>
 
@@ -309,6 +313,7 @@ async function initAuth(){
 
     await loadData();
     setupRealtime();
+    limparFiltrosAcompanhamento();
     show(state.isAdmin ? 'dashboard' : 'analista');
   }catch(e){
     msg(e.message || String(e), 'error');
@@ -474,6 +479,16 @@ function renderNaoDistribuidos(){
   table('tblNaoDistribuidos',['CNPJ','IE','Razão Social','Município','Competência'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.competencia)}</td></tr>`));
 }
 
+function limparFiltrosAcompanhamento(){
+  const selResp = document.getElementById('analistaSelect');
+  const selTarefa = document.getElementById('analistaTarefa');
+  const selStatus = document.getElementById('analistaStatus');
+  if (state.isAdmin && selResp) selResp.value = '';
+  if (selTarefa) selTarefa.value = '';
+  if (selStatus) selStatus.value = '';
+  renderAnalista();
+}
+
 function renderAnalista(){
   const aid = analistaSelect.value;
   const tarefaId = analistaTarefa ? analistaTarefa.value : '';
@@ -532,7 +547,16 @@ function renderAnalista(){
     return `<tr>${cols.join('')}</tr>`;
   });
 
-  table('tblAnalista', headers, rows);
+  const resumo = document.getElementById('analistaResumoFiltro');
+  if (resumo) {
+    const escopo = state.isAdmin ? 'Administrador: visualizando a base conforme filtros aplicados.' : 'Analista: visualizando apenas atividades atribuídas ao próprio e-mail.';
+    resumo.textContent = `${escopo} Registros encontrados: ${b.length}.`;
+  }
+
+  const colspan = headers.length;
+  const finalRows = rows.length ? rows : [`<tr><td colspan="${colspan}" class="muted">Nenhuma atividade encontrada para os filtros selecionados. Para o administrador visualizar todas as distribuições, deixe Responsável, Tarefa e Status em “Todos”.</td></tr>`];
+
+  table('tblAnalista', headers, finalRows);
 }
 
 function renderResumo(){
