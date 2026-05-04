@@ -167,9 +167,9 @@
       </div>
 
       <div id="analista" class="card view hidden">
-        <h2>Tela do Analista</h2>
+        <h2>Tela de Acompanhamento das Distribuições</h2>
         <div class="row2">
-          <div><label>Analista</label><select id="analistaSelect" onchange="renderAnalista()"></select></div>
+          <div><label>Responsável</label><select id="analistaSelect" onchange="renderAnalista()"></select></div>
           <div><label>Filtro de status</label><select id="analistaStatus" onchange="renderAnalista()"><option value="">Todos</option><option>PENDENTE</option><option>EM ANDAMENTO</option><option>DET ENVIADO</option><option>IE SUSPENSA</option></select></div>
         </div>
         <div class="table-wrap"><table id="tblAnalista"></table></div>
@@ -474,12 +474,49 @@ function renderNaoDistribuidos(){
 }
 
 function renderAnalista(){
-  const aid=analistaSelect.value, st=analistaStatus.value;
-  let b=state.base;
-  if(state.isAdmin && aid) b=b.filter(x=>x.analista_id===aid);
-  if(!state.isAdmin) b=b.filter(x=>(x.analista_email||'').toLowerCase() === (state.authUser.email||'').toLowerCase());
-  if(st)b=b.filter(x=>x.status===st);
-  table('tblAnalista',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Status','Observação'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefa_nome)}</td><td>${esc(x.competencia)}</td><td><select onchange="updateStatus('${x.id}',this.value)">${STATUS.map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`).join('')}</select></td><td><textarea onblur="updateObs('${x.id}',this.value)">${esc(x.observacao||'')}</textarea></td></tr>`));
+  const aid = analistaSelect.value;
+  const st = analistaStatus.value;
+  let b = state.base || [];
+
+  if (state.isAdmin) {
+    // ADMINISTRADOR: visualiza todas as distribuições feitas para todos os responsáveis,
+    // sejam eles Analistas ou Administradores. O filtro por responsável é opcional.
+    if (aid) {
+      const selectedUser = state.usuarios.find(u => u.id === aid) || {};
+      const selectedEmail = String(selectedUser.email || '').trim().toLowerCase();
+      const selectedName = String(selectedUser.nome || '').trim().toLowerCase();
+
+      b = b.filter(x => {
+        const rowAnalistaId = String(x.analista_id || '').trim();
+        const rowAnalistaEmail = String(x.analista_email || '').trim().toLowerCase();
+        const rowAnalistaNome = String(x.analista_nome || '').trim().toLowerCase();
+
+        return rowAnalistaId === aid
+          || (!!selectedEmail && rowAnalistaEmail === selectedEmail)
+          || (!!selectedName && rowAnalistaNome === selectedName);
+      });
+    }
+  } else {
+    // ANALISTA COMUM: visualiza apenas registros atribuídos ao próprio e-mail.
+    const loggedEmail = String(state.authUser?.email || '').trim().toLowerCase();
+    b = b.filter(x => String(x.analista_email || '').trim().toLowerCase() === loggedEmail);
+  }
+
+  if (st) b = b.filter(x => x.status === st);
+
+  const headers = state.isAdmin
+    ? ['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Responsável','Status','Observação']
+    : ['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Status','Observação'];
+
+  const rows = b.map(x => {
+    const baseCols = `<td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefa_nome)}</td><td>${esc(x.competencia)}</td>`;
+    const responsavelCol = state.isAdmin ? `<td>${esc(x.analista_nome || x.analista_email || 'Não distribuído')}</td>` : '';
+    const statusCol = `<td><select onchange="updateStatus('${x.id}',this.value)">${STATUS.map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`).join('')}</select></td>`;
+    const obsCol = `<td><textarea onblur="updateObs('${x.id}',this.value)">${esc(x.observacao||'')}</textarea></td>`;
+    return `<tr>${baseCols}${responsavelCol}${statusCol}${obsCol}</tr>`;
+  });
+
+  table('tblAnalista', headers, rows);
 }
 
 function renderResumo(){
@@ -495,7 +532,7 @@ function refreshAll(){
   const tarefas=state.tarefas, usuarios=state.usuarios;
   ['filtroTarefa','importTarefa','distTarefa'].forEach(id=>fillSelect(id,tarefas,t=>`${t.nome} | ${t.competencia}`,t=>t.id,id==='filtroTarefa'?'Todas':''));
   ['filtroAnalista','distAnalista'].forEach(id=>fillSelect(id,usuarios,u=>`${u.nome} (${u.perfil})`,u=>u.id,id==='filtroAnalista'?'Todos':''));
-  if(state.isAdmin) fillSelect('analistaSelect', usuarios, u=>`${u.nome} (${u.perfil})`, u=>u.id, 'Todos');
+  if(state.isAdmin) fillSelect('analistaSelect', usuarios, u=>`${u.nome} (${u.perfil})`, u=>u.id, 'Todos os responsáveis');
   else fillSelect('analistaSelect', [state.perfil], u=>`${u.nome} (${u.perfil})`, u=>u.id, '');
   renderDashboard(); renderTarefas(); renderUsuarios(); renderNaoDistribuidos(); renderAnalista(); renderResumo();
 }
