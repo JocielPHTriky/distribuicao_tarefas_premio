@@ -290,7 +290,7 @@ async function initAuth(){
     }
 
     state.perfil = perfil;
-    state.isAdmin = perfil.perfil === 'Admin';
+    state.isAdmin = String(perfil.perfil || '').toLowerCase() === 'admin'; 
 
     document.getElementById('authView').classList.add('hidden');
     document.getElementById('appView').classList.remove('hidden');
