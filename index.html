@@ -195,6 +195,7 @@
 const SUPABASE_URL = 'https://rcdkgnpnvmzkjbfngxjr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_SdIqIZ2vTM2zMHFWDI6sIQ_NYDJeMVg';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const EDGE_CRIAR_USUARIO_URL = `${SUPABASE_URL}/functions/v1/criar-usuario-operacional`;
 
 
 function withTimeout(promise, label='operação', ms=15000){
@@ -365,7 +366,7 @@ async function addUsuario(){
   const email = userEmail.value.trim().toLowerCase();
   const setor = userSetor.value.trim();
   const perfil = userPerfil.value;
-  const senha = userSenha.value;
+  const senha = userSenha.value.trim();
 
   if(!nome || !email || !setor || !perfil || !senha) {
     return msg('Informe nome, e-mail, setor/DRRE, perfil e senha de acesso.','error');
@@ -375,41 +376,55 @@ async function addUsuario(){
     return msg('A senha deve ter pelo menos 6 caracteres.','error');
   }
 
+  if(!state.session?.access_token) {
+    return msg('Sessão expirada. Faça login novamente antes de cadastrar usuários.','error');
+  }
+
   const btn = document.querySelector('#usuarios button.primary');
   if(btn){ btn.disabled = true; btn.textContent = 'Salvando...'; }
 
   try {
-    const { data, error } = await withTimeout(
-      supabaseClient.functions.invoke('criar-usuario-operacional', {
-        body: { nome, email, setor, perfil, senha }
+    const resposta = await withTimeout(
+      fetch(EDGE_CRIAR_USUARIO_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${state.session.access_token}`
+        },
+        body: JSON.stringify({ nome, email, setor, perfil, senha })
       }),
-      'criação do usuário operacional',
+      'chamada da função criar-usuario-operacional',
       30000
     );
 
-    if(error) {
-      const detalhe = error.context?.error_description || error.message || JSON.stringify(error);
-      return msg('Erro ao criar usuário: ' + detalhe, 'error');
+    const texto = await resposta.text();
+    let payload = null;
+    try { payload = texto ? JSON.parse(texto) : null; } catch { payload = { error: texto }; }
+
+    if(!resposta.ok) {
+      const detalhe = payload?.error || payload?.message || texto || `HTTP ${resposta.status}`;
+      return msg(`Erro ao criar usuário: ${detalhe}`, 'error');
     }
 
-    if(data?.error) {
-      return msg('Erro ao criar usuário: ' + data.error, 'error');
+    if(payload?.error) {
+      return msg('Erro ao criar usuário: ' + payload.error, 'error');
     }
 
     userNome.value = '';
     userEmail.value = '';
     userSetor.value = '';
     userSenha.value = '';
+    userPerfil.value = 'Analista';
 
-    msg(`Usuário cadastrado com sucesso. Login: ${email}`);
+    msg(`Usuário cadastrado/sincronizado com sucesso. Login: ${email}`);
     await loadData();
   } catch(e) {
-    msg(e.message || String(e), 'error');
+    msg('Erro ao criar usuário: ' + (e.message || String(e)), 'error');
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = 'Salvar usuário'; }
   }
 }
-
 async function delUsuario(id){
   if(!requireAdmin() || !confirm('Excluir usuário?')) return;
   const { error } = await supabaseClient.from('usuarios').delete().eq('id',id);
@@ -641,8 +656,18 @@ document.getElementById('distCompetencia').addEventListener('input', renderNaoDi
 supabaseClient.auth.onAuthStateChange((_event, _session) => initAuth());
 window.__diagnosticoSupabase = {
   url: SUPABASE_URL,
+  edgeCriarUsuarioUrl: EDGE_CRIAR_USUARIO_URL,
   testarSessao: () => supabaseClient.auth.getSession().then(console.log),
-  testarPerfil: () => supabaseClient.from('perfis_usuarios').select('*').then(console.log)
+  testarPerfil: () => supabaseClient.from('perfis_usuarios').select('*').then(console.log),
+  testarFuncaoCriarUsuario: (body) => fetch(EDGE_CRIAR_USUARIO_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${state.session?.access_token || ''}`
+    },
+    body: JSON.stringify(body || { nome:'Teste', email:'teste@example.com', setor:'GEAR', perfil:'Analista', senha:'123456' })
+  }).then(async r => ({ status:r.status, body: await r.text() })).then(console.log)
 };
 initAuth();
 </script>
