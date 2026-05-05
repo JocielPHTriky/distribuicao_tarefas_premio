@@ -68,14 +68,13 @@
 
   <div id="authView" class="card authbox">
     <h2>Acesso ao sistema</h2>
-    <div class="notice">Entre com o e-mail e a senha cadastrados no Supabase Auth. O perfil operacional deve existir na tabela <b>perfis_usuarios</b>.</div>
+    <div class="notice">Entre com o e-mail e a senha cadastrados pelo administrador do sistema.</div>
     <label>E-mail</label>
     <input id="loginEmail" type="email" placeholder="seu.email@dominio.gov.br">
     <label>Senha</label>
     <input id="loginSenha" type="password" placeholder="Senha">
     <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
       <button id="btnEntrar" class="primary" onclick="signIn()">Entrar</button>
-      <button onclick="signUp()">Criar conta com este e-mail</button>
     </div>
   </div>
 
@@ -124,12 +123,13 @@
 
       <div id="usuarios" class="card view hidden admin-only-lock">
         <h2>Cadastro de Usuários</h2>
-        <div class="notice">Este cadastro cria o perfil operacional. Para o login funcionar, o usuário também precisa existir no Supabase Auth com o mesmo e-mail.</div>
+        <div class="notice">Este cadastro cria o usuário de login e o perfil operacional. A senha definida aqui será a senha inicial de acesso ao sistema.</div>
         <div class="row">
           <div><label>Nome</label><input id="userNome"></div>
           <div><label>E-mail institucional</label><input id="userEmail"></div>
           <div><label>Setor/DRRE</label><input id="userSetor"></div>
           <div><label>Perfil</label><select id="userPerfil"><option>Analista</option><option>Admin</option></select></div>
+          <div><label>Senha de acesso</label><input id="userSenha" type="password" placeholder="Senha inicial"></div>
         </div>
         <button class="primary" onclick="addUsuario()">Salvar usuário</button>
         <h3>Usuários cadastrados</h3>
@@ -236,15 +236,6 @@ async function signIn(){
   }finally{
     if(btn){ btn.disabled = false; btn.textContent = 'Entrar'; }
   }
-}
-
-async function signUp(){
-  const email = loginEmail.value.trim();
-  const password = loginSenha.value;
-  if(!email || !password) return msg('Informe e-mail e senha.','error');
-  const { error } = await withTimeout(supabaseClient.auth.signUp({ email, password }), 'criação de conta');
-  if(error) return msg(error.message,'error');
-  msg('Conta solicitada/criada. Se a confirmação por e-mail estiver ativa, confirme antes de entrar.');
 }
 
 async function signOut(){
@@ -369,13 +360,54 @@ async function delTarefa(id){
 
 async function addUsuario(){
   if(!requireAdmin()) return;
-  const nome=userNome.value.trim(), email=userEmail.value.trim().toLowerCase(), setor=userSetor.value.trim(), perfil=userPerfil.value;
-  if(!nome||!email) return msg('Informe nome e e-mail.','error');
-  const { error } = await supabaseClient.from('usuarios').insert({ nome,email,setor,perfil });
-  if(error) return msg(error.message,'error');
-  userNome.value=userEmail.value=userSetor.value='';
-  msg('Usuário cadastrado. Lembre-se de criar também o login no Supabase Auth, se ainda não existir.');
-  await loadData();
+
+  const nome = userNome.value.trim();
+  const email = userEmail.value.trim().toLowerCase();
+  const setor = userSetor.value.trim();
+  const perfil = userPerfil.value;
+  const senha = userSenha.value;
+
+  if(!nome || !email || !setor || !perfil || !senha) {
+    return msg('Informe nome, e-mail, setor/DRRE, perfil e senha de acesso.','error');
+  }
+
+  if(senha.length < 6) {
+    return msg('A senha deve ter pelo menos 6 caracteres.','error');
+  }
+
+  const btn = document.querySelector('#usuarios button.primary');
+  if(btn){ btn.disabled = true; btn.textContent = 'Salvando...'; }
+
+  try {
+    const { data, error } = await withTimeout(
+      supabaseClient.functions.invoke('criar-usuario-operacional', {
+        body: { nome, email, setor, perfil, senha }
+      }),
+      'criação do usuário operacional',
+      30000
+    );
+
+    if(error) {
+      const detalhe = error.context?.error_description || error.message || JSON.stringify(error);
+      return msg('Erro ao criar usuário: ' + detalhe, 'error');
+    }
+
+    if(data?.error) {
+      return msg('Erro ao criar usuário: ' + data.error, 'error');
+    }
+
+    userNome.value = '';
+    userEmail.value = '';
+    userSetor.value = '';
+    userSenha.value = '';
+
+    msg(`Usuário cadastrado com sucesso. Login: ${email}`);
+    await loadData();
+  } catch(e) {
+    msg(e.message || String(e), 'error');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Salvar usuário'; }
+  }
 }
 
 async function delUsuario(id){
