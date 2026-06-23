@@ -40,6 +40,7 @@
     .EM_ANDAMENTO { background:#fef3c7; color:#92400e; }
     .DET_ENVIADO { background:#dbeafe; color:#1e40af; }
     .IE_SUSPENSA { background:#dcfce7; color:#166534; }
+    .IE_MANTIDA { background:#e0f2fe; color:#075985; }
     .stats { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; margin-top:12px; }
     .stat { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:12px; }
     .stat b { display:block; font-size:24px; margin-top:4px; }
@@ -172,7 +173,7 @@
         <div class="row3">
           <div><label>Responsável</label><select id="analistaSelect" onchange="renderAnalista()"></select></div>
           <div><label>Tarefa</label><select id="analistaTarefa" onchange="renderAnalista()"></select></div>
-          <div><label>Filtro de status</label><select id="analistaStatus" onchange="renderAnalista()"><option value="">Todos</option><option>PENDENTE</option><option>EM ANDAMENTO</option><option>DET ENVIADO</option><option>IE SUSPENSA</option></select></div>
+          <div><label>Filtro de status</label><select id="analistaStatus" onchange="renderAnalista()"><option value="">Todos</option><option>PENDENTE</option><option>EM ANDAMENTO</option><option>DET ENVIADO</option><option>IE SUSPENSA</option><option>IE MANTIDA</option></select></div>
         </div>
         <div style="display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap;">
           <button onclick="limparFiltrosAcompanhamento()">Limpar filtros</button>
@@ -206,7 +207,7 @@ function withTimeout(promise, label='operação', ms=15000){
   ]);
 }
 
-const STATUS = ['PENDENTE','EM ANDAMENTO','DET ENVIADO','IE SUSPENSA'];
+const STATUS = ['PENDENTE','EM ANDAMENTO','DET ENVIADO','IE SUSPENSA','IE MANTIDA'];
 let state = { session:null, authUser:null, perfil:null, isAdmin:false, tarefas:[], usuarios:[], base:[] };
 
 function onlyDigits(s){ return (s||'').replace(/\D/g,'') }
