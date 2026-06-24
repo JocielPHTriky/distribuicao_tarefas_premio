@@ -44,7 +44,16 @@
     .IE_CANCELADA { background:#f3e8ff; color:#6b21a8; }
     .stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-top:12px; }
     .stat { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:12px; }
+    .stat.status-card { border-left:6px solid #cbd5e1; }
+    .stat.status-card.PENDENTE { background:#fff7f7; border-color:#fecaca; border-left-color:#991b1b; color:#7f1d1d; }
+    .stat.status-card.EM_ANDAMENTO { background:#fffbeb; border-color:#fde68a; border-left-color:#92400e; color:#78350f; }
+    .stat.status-card.DET_ENVIADO { background:#eff6ff; border-color:#bfdbfe; border-left-color:#1e40af; color:#1e3a8a; }
+    .stat.status-card.IE_SUSPENSA { background:#f0fdf4; border-color:#bbf7d0; border-left-color:#166534; color:#14532d; }
+    .stat.status-card.IE_MANTIDA { background:#f0f9ff; border-color:#bae6fd; border-left-color:#075985; color:#0c4a6e; }
+    .stat.status-card.IE_CANCELADA { background:#faf5ff; border-color:#e9d5ff; border-left-color:#6b21a8; color:#581c87; }
     .stat b { display:block; font-size:24px; margin-top:4px; }
+    .status-cell { min-width:170px; width:170px; }
+    .status-select { min-width:155px; width:100%; font-weight:bold; text-align:left; white-space:normal; }
     .muted { color:var(--muted); font-size:13px; }
     .hidden { display:none !important; }
     .notice { background:#eff6ff; border:1px solid #bfdbfe; padding:10px; border-radius:10px; font-size:13px; margin:10px 0; }
@@ -525,7 +534,7 @@ function renderDashboard(){
     'IE MANTIDA':'IE mantida',
     'IE CANCELADA':'IE cancelada'
   };
-  el('stats').innerHTML=[['Total',b.length], ...STATUS.map(s=>[labels[s] || s, count(s)])].map(x=>`<div class="stat"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
+  el('stats').innerHTML = [`<div class="stat"><span>Total</span><b>${b.length}</b></div>`, ...STATUS.map(s => `<div class="stat status-card ${s.replaceAll(' ','_')}"><span>${labels[s] || s}</span><b>${count(s)}</b></div>`)].join('');
   table('tblDashboard',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Analista','Status'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefa_nome)}</td><td>${esc(x.competencia)}</td><td>${esc(x.analista_nome||'Não distribuído')}</td><td><span class="pill ${String(x.status).replaceAll(' ','_')}">${esc(x.status)}</span></td></tr>`));
 }
 
