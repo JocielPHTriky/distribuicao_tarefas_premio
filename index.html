@@ -172,9 +172,10 @@
 
       <div id="analista" class="card view hidden">
         <h2>Tela de Acompanhamento das Distribuições</h2>
-        <div class="row3">
+        <div class="row">
           <div><label>Responsável</label><select id="analistaSelect" onchange="renderAnalista()"></select></div>
           <div><label>Tarefa</label><select id="analistaTarefa" onchange="renderAnalista()"></select></div>
+          <div><label>Competência</label><select id="analistaCompetencia" onchange="renderAnalista()"></select></div>
           <div><label>Filtro de status</label><select id="analistaStatus" onchange="renderAnalista()"><option value="">Todos</option><option>PENDENTE</option><option>EM ANDAMENTO</option><option>DET ENVIADO</option><option>IE SUSPENSA</option><option>IE MANTIDA</option><option>IE CANCELADA</option></select></div>
         </div>
         <div style="display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap;">
@@ -218,6 +219,8 @@ function esc(x){ return String(x??'').replace(/[&<>"]/g, s=>({'&':'&amp;','<':'&
 function msg(text,type='success'){ document.getElementById('msg').innerHTML=`<div class="${type}">${text}</div>`; setTimeout(()=>document.getElementById('msg').innerHTML='',6000) }
 function table(id, headers, rows){ document.getElementById(id).innerHTML = `<thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody>` }
 function fillSelect(id, arr, labelFn, valueFn, allLabel){ const el=document.getElementById(id); if(!el) return; const val=el.value; el.innerHTML=(allLabel?`<option value="">${allLabel}</option>`:'')+arr.map(x=>`<option value="${esc(valueFn(x))}">${esc(labelFn(x))}</option>`).join(''); if([...el.options].some(o=>o.value===val)) el.value=val; }
+function el(id){ return document.getElementById(id); }
+function val(id){ const node = el(id); return node ? node.value : ''; }
 function requireAdmin(){ if(!state.isAdmin){ msg('Acesso restrito ao perfil Administrador.','error'); show('dashboard'); return false; } return true; }
 function show(id){
   if(['tarefas','usuarios','importar','distribuir'].includes(id) && !state.isAdmin) return requireAdmin();
@@ -499,15 +502,15 @@ async function updateObs(id, obs){
 }
 
 function filteredBase(){
-  let b=state.base;
-  const ft=filtroTarefa.value;
-  const fc=filtroCompetencia.value;
-  const fa=filtroAnalista.value;
-  const fs=filtroStatus.value;
-  if(ft)b=b.filter(x=>x.tarefa_id===ft);
-  if(fc)b=b.filter(x=>String(x.competencia||'')===String(fc));
-  if(fa)b=b.filter(x=>x.analista_id===fa);
-  if(fs)b=b.filter(x=>x.status===fs);
+  let b = state.base || [];
+  const ft = val('filtroTarefa');
+  const fc = val('filtroCompetencia');
+  const fa = val('filtroAnalista');
+  const fs = val('filtroStatus');
+  if(ft) b = b.filter(x => x.tarefa_id === ft);
+  if(fc) b = b.filter(x => String(x.competencia || '') === String(fc));
+  if(fa) b = b.filter(x => x.analista_id === fa);
+  if(fs) b = b.filter(x => x.status === fs);
   return b;
 }
 
@@ -522,7 +525,7 @@ function renderDashboard(){
     'IE MANTIDA':'IE mantida',
     'IE CANCELADA':'IE cancelada'
   };
-  stats.innerHTML=[['Total',b.length], ...STATUS.map(s=>[labels[s] || s, count(s)])].map(x=>`<div class="stat"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
+  el('stats').innerHTML=[['Total',b.length], ...STATUS.map(s=>[labels[s] || s, count(s)])].map(x=>`<div class="stat"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
   table('tblDashboard',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Analista','Status'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefa_nome)}</td><td>${esc(x.competencia)}</td><td>${esc(x.analista_nome||'Não distribuído')}</td><td><span class="pill ${String(x.status).replaceAll(' ','_')}">${esc(x.status)}</span></td></tr>`));
 }
 
@@ -535,27 +538,31 @@ function renderUsuarios(){
 }
 
 function renderNaoDistribuidos(){
-  const tid=distTarefa.value, comp=distCompetencia.value.trim();
-  let b=state.base.filter(x=>!x.analista_id);
-  if(tid)b=b.filter(x=>x.tarefa_id===tid);
-  if(comp)b=b.filter(x=>x.competencia===comp);
+  const tid = val('distTarefa');
+  const comp = String(val('distCompetencia') || '').trim();
+  let b = (state.base || []).filter(x => !x.analista_id);
+  if(tid) b = b.filter(x => x.tarefa_id === tid);
+  if(comp) b = b.filter(x => x.competencia === comp);
   table('tblNaoDistribuidos',['CNPJ','IE','Razão Social','Município','Competência'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.competencia)}</td></tr>`));
 }
 
 function limparFiltrosAcompanhamento(){
   const selResp = document.getElementById('analistaSelect');
   const selTarefa = document.getElementById('analistaTarefa');
+  const selCompetencia = document.getElementById('analistaCompetencia');
   const selStatus = document.getElementById('analistaStatus');
   if (state.isAdmin && selResp) selResp.value = '';
   if (selTarefa) selTarefa.value = '';
+  if (selCompetencia) selCompetencia.value = '';
   if (selStatus) selStatus.value = '';
   renderAnalista();
 }
 
 function renderAnalista(){
-  const aid = analistaSelect.value;
-  const tarefaId = analistaTarefa ? analistaTarefa.value : '';
-  const st = analistaStatus.value;
+  const aid = val('analistaSelect');
+  const tarefaId = val('analistaTarefa');
+  const competenciaFiltro = val('analistaCompetencia');
+  const st = val('analistaStatus');
   let b = state.base || [];
 
   if (state.isAdmin) {
@@ -585,12 +592,17 @@ function renderAnalista(){
   // Filtro por tarefa, refletindo as tarefas cadastradas em "Cadastro de Tarefas".
   if (tarefaId) b = b.filter(x => String(x.tarefa_id || '') === String(tarefaId));
 
+  // Filtro por competência, refletindo as competências cadastradas em "Cadastro de Tarefas".
+  if (competenciaFiltro) b = b.filter(x => String(x.competencia || '') === String(competenciaFiltro));
+
   // Filtro por status.
   if (st) b = b.filter(x => x.status === st);
 
   const headers = state.isAdmin
     ? ['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Responsável','Status','Observação']
     : ['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Status','Observação'];
+
+  const headerHtml = headers.map(h => h === 'Status' ? '<th class="status-cell">Status</th>' : `<th>${h}</th>`).join('');
 
   const rows = b.map(x => {
     const cols = [
@@ -604,7 +616,8 @@ function renderAnalista(){
 
     if (state.isAdmin) cols.push(`<td>${esc(x.analista_nome || x.analista_email || 'Não distribuído')}</td>`);
 
-    cols.push(`<td><select onchange="updateStatus('${x.id}',this.value)">${STATUS.map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`).join('')}</select></td>`);
+    const statusClass = String(x.status || '').replaceAll(' ','_');
+    cols.push(`<td class="status-cell"><select class="status-select ${statusClass}" onchange="this.className='status-select '+this.value.replaceAll(' ','_'); updateStatus('${x.id}',this.value)">${STATUS.map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`).join('')}</select></td>`);
     cols.push(`<td><textarea onblur="updateObs('${x.id}',this.value)">${esc(x.observacao||'')}</textarea></td>`);
 
     return `<tr>${cols.join('')}</tr>`;
@@ -619,7 +632,7 @@ function renderAnalista(){
   const colspan = headers.length;
   const finalRows = rows.length ? rows : [`<tr><td colspan="${colspan}" class="muted">Nenhuma atividade encontrada para os filtros selecionados. Para o administrador visualizar todas as distribuições, deixe Responsável, Tarefa e Status em “Todos”.</td></tr>`];
 
-  table('tblAnalista', headers, finalRows);
+  document.getElementById('tblAnalista').innerHTML = `<thead><tr>${headerHtml}</tr></thead><tbody>${finalRows.join('')}</tbody>`;
 }
 
 function renderResumo(){
@@ -652,13 +665,15 @@ function refreshAll(){
   // Analista comum fica limitado ao próprio perfil.
   if (state.isAdmin) {
     fillSelect('analistaSelect', usuarios, u=>`${u.nome} (${u.perfil})`, u=>u.id, 'Todos os responsáveis');
-    if (analistaSelect && ![...analistaSelect.options].some(o => o.value === analistaSelect.value)) analistaSelect.value = '';
+    const analistaSelectEl = el('analistaSelect');
+    if (analistaSelectEl && ![...analistaSelectEl.options].some(o => o.value === analistaSelectEl.value)) analistaSelectEl.value = '';
   } else {
     fillSelect('analistaSelect', [state.perfil], u=>`${u.nome} (${u.perfil})`, u=>u.id, '');
   }
 
-  // Novo filtro por tarefa na tela do analista/acompanhamento.
+  // Filtros da tela do analista/acompanhamento.
   fillSelect('analistaTarefa', tarefas, t=>`${t.nome} | ${t.competencia}`, t=>t.id, 'Todas as tarefas');
+  fillSelect('analistaCompetencia', competencias, c=>c, c=>c, 'Todas');
 
   renderDashboard();
   renderTarefas();
@@ -677,8 +692,8 @@ function exportCSV(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='relatorio_distribuicao_cnpj.csv'; a.click();
 }
 
-document.getElementById('distTarefa').addEventListener('change', renderNaoDistribuidos);
-document.getElementById('distCompetencia').addEventListener('change', renderNaoDistribuidos);
+el('distTarefa')?.addEventListener('change', renderNaoDistribuidos);
+el('distCompetencia')?.addEventListener('change', renderNaoDistribuidos);
 supabaseClient.auth.onAuthStateChange((_event, _session) => initAuth());
 window.__diagnosticoSupabase = {
   url: SUPABASE_URL,
