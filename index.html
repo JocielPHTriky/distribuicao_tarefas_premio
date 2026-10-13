@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GEAR - DISTRIBUIÇÃO DE ATIVIDADES</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="vendor/jspdf-4.2.1.umd.min.js"></script>
+  <script defer src="vendor/jspdf-autotable-5.0.8.min.js"></script>
   <style>
     :root { --bg:#f4f6f8; --card:#fff; --text:#1f2937; --muted:#6b7280; --primary:#1d4ed8; --danger:#b91c1c; --ok:#047857; --border:#d1d5db; --dark:#0f172a; }
     * { box-sizing: border-box; }
@@ -96,7 +98,7 @@
       <button class="admin-only" onclick="show('usuarios')">👤 Cadastrar Usuários</button>
       <button class="admin-only" onclick="show('importar')">📥 Importar CNPJs</button>
       <button class="admin-only" onclick="show('distribuir')">🔀 Distribuir CNPJs</button>
-      <button onclick="show('analista')">✅ Tela do Analista</button>
+      <button onclick="show('analista')">✅ Minhas Atividades</button>
       <button onclick="show('relatorios')">📤 Relatórios</button>
       <hr>
       <button onclick="signOut()">🚪 Sair</button>
@@ -114,6 +116,7 @@
           <div><label>Filtrar por status</label><select id="filtroStatus" onchange="renderDashboard()"></select></div>
         </div>
         <div class="stats" id="stats"></div>
+        <div style="margin-top:12px"><button id="btnRelatorioPainel" class="primary" onclick="gerarRelatorioPDFPainel()">RELATÓRIO</button></div>
         <h3>Base distribuída</h3>
         <div class="table-wrap"><table id="tblDashboard"></table></div>
       </div>
@@ -141,7 +144,7 @@
           <div><label>Nome</label><input id="userNome"></div>
           <div><label>E-mail institucional</label><input id="userEmail"></div>
           <div><label>Setor/DRRE</label><input id="userSetor"></div>
-          <div><label>Perfil</label><select id="userPerfil"><option>Analista</option><option>Admin</option></select></div>
+          <div><label>Perfil</label><select id="userPerfil"><option>Analista</option><option>Admin</option><option>Auditor</option></select></div>
           <div><label>Senha de acesso</label><input id="userSenha" type="password" placeholder="Senha inicial"></div>
         </div>
         <button class="primary" onclick="addUsuario()">Salvar usuário</button>
@@ -180,7 +183,7 @@
       </div>
 
       <div id="analista" class="card view hidden">
-        <h2>Tela de Acompanhamento das Distribuições</h2>
+        <h2>Minhas Atividades</h2>
         <div class="row">
           <div><label>Responsável</label><select id="analistaSelect" onchange="renderAnalista()"></select></div>
           <div><label>Tarefa</label><select id="analistaTarefa" onchange="renderAnalista()"></select></div>
@@ -256,6 +259,8 @@ async function signIn(){
 }
 
 async function signOut(){
+  dadosPainelProntos = false;
+  ++carregamentoVersao;
   await supabaseClient.auth.signOut();
   state = { session:null, authUser:null, perfil:null, isAdmin:false, tarefas:[], usuarios:[], base:[] };
   document.getElementById('appView').classList.add('hidden');
@@ -284,7 +289,7 @@ async function initAuth(){
       supabaseClient
         .from('perfis_usuarios')
         .select('*')
-        .ilike('email', email)
+        .eq('auth_user_id', state.authUser.id)
         .eq('ativo', true)
         .maybeSingle(),
       'busca do perfil operacional'
@@ -303,6 +308,10 @@ async function initAuth(){
     }
 
     state.perfil = perfil;
+    if(!['admin','analista','auditor'].includes(String(perfil.perfil || '').trim().toLowerCase())){
+      await signOut();
+      return msg('Perfil operacional não reconhecido. Consulte o administrador.','error');
+    }
     state.isAdmin = String(perfil.perfil || '').trim().toLowerCase() === 'admin';
 
     document.getElementById('authView').classList.add('hidden');
@@ -329,21 +338,57 @@ async function initAuth(){
     authBusy = false;
   }
 }
+let dadosPainelProntos = false;
+let carregamentoVersao = 0;
+async function readAllRows(makeQuery){
+  const rows = [];
+  let expected = null;
+  while(true){
+    const {data, error, count} = await withTimeout(makeQuery().range(rows.length, rows.length + 499), 'leitura paginada');
+    if(error) throw error;
+    if(count == null) throw new Error('Não foi possível confirmar o total da consulta.');
+    if(expected !== null && expected !== count) throw new Error('A base mudou durante a leitura. Atualize e tente novamente.');
+    expected = count;
+    rows.push(...(data || []));
+    if(rows.length === expected) break;
+    if(!data?.length || rows.length > expected) throw new Error('Leitura incompleta da base. Atualize e tente novamente.');
+  }
+  if(new Set(rows.map(x=>x.id)).size !== rows.length) throw new Error('A base mudou durante a paginação. Atualize e tente novamente.');
+  return rows;
+}
 async function loadData(){
-  let qTarefas = supabaseClient.from('tarefas').select('*').order('created_at',{ascending:false});
-  let qUsuarios = supabaseClient.from('usuarios').select('*').order('nome',{ascending:true});
-  let qBase = supabaseClient.from('base_cnpj').select('*').order('created_at',{ascending:false});
-
-  const [rt, ru, rb] = await withTimeout(Promise.all([qTarefas, qUsuarios, qBase]), 'carregamento dos dados');
-
-  if(rt.error) msg('Erro ao carregar tarefas: '+rt.error.message,'error');
-  if(ru.error) msg('Erro ao carregar usuários: '+ru.error.message,'error');
-  if(rb.error) msg('Erro ao carregar base: '+rb.error.message,'error');
-
-  state.tarefas = rt.data || [];
-  state.usuarios = ru.data || [];
-  state.base = rb.data || [];
-  refreshAll();
+  const version = ++carregamentoVersao;
+  const authId = state.authUser?.id;
+  const email = state.authUser?.email;
+  const isAdmin = state.isAdmin;
+  dadosPainelProntos = false;
+  try{
+    const [tarefas, usuarios, base] = await Promise.all([
+      isAdmin ? readAllRows(()=>supabaseClient.from('tarefas').select('*',{count:'exact'}).order('created_at',{ascending:false}).order('id')) : Promise.resolve([]),
+      isAdmin ? readAllRows(()=>supabaseClient.from('usuarios').select('*',{count:'exact'}).order('nome').order('id')) : Promise.resolve([]),
+      readAllRows(()=>{
+        let q = supabaseClient.from('base_cnpj').select('*',{count:'exact'}).order('created_at',{ascending:false}).order('id');
+        // RLS continua sendo a autoridade; o cliente também limita o escopo operacional.
+        if(!isAdmin) q = q.ilike('analista_email', email || '');
+        return q;
+      })
+    ]);
+    if(version !== carregamentoVersao || state.authUser?.id !== authId) return;
+    state.tarefas = tarefas;
+    state.usuarios = usuarios;
+    state.base = base;
+    if(!isAdmin){
+      // As tabelas administrativas não são legíveis por perfis operacionais.
+      // Os filtros usam apenas as tarefas e responsáveis presentes na base autorizada.
+      const own = authorizedBase();
+      state.tarefas = [...new Map(own.map(x=>[`${x.tarefa_id}|${x.competencia}`,{id:x.tarefa_id,nome:x.tarefa_nome,competencia:x.competencia}])).values()];
+      state.usuarios = [...new Map(own.map(x=>[x.analista_id,{id:x.analista_id,nome:state.perfil.nome,email:state.authUser.email,perfil:state.perfil.perfil}])).values()];
+    }
+    dadosPainelProntos = true;
+    refreshAll();
+  }catch(e){
+    if(version === carregamentoVersao) msg('Erro ao carregar dados completos: '+esc(e.message || String(e)), 'error');
+  }
 }
 
 let realtimeStarted = false;
@@ -500,18 +545,30 @@ async function distribuir(){
 }
 
 async function updateStatus(id, status){
+  if(!canUpdateActivity(id)) return msg('Você não pode alterar esta atividade.','error');
+  if(!STATUS.includes(status)) return msg('Status inválido.','error');
   const { error } = await supabaseClient.from('base_cnpj').update({status, data_atualizacao:new Date().toISOString().slice(0,10)}).eq('id',id);
   if(error) return msg(error.message,'error');
   await loadData();
 }
 
 async function updateObs(id, obs){
+  if(!canUpdateActivity(id)) return msg('Você não pode alterar esta atividade.','error');
   const { error } = await supabaseClient.from('base_cnpj').update({observacao:obs, data_atualizacao:new Date().toISOString().slice(0,10)}).eq('id',id);
   if(error) return msg(error.message,'error');
 }
 
+function authorizedBase(){
+  if(!state.authUser || !state.perfil) return [];
+  if(state.isAdmin) return state.base || [];
+  const email = String(state.authUser.email || '').toLowerCase();
+  return email ? (state.base || []).filter(x=>String(x.analista_email || '').toLowerCase() === email) : [];
+}
+function canUpdateActivity(id){
+  return authorizedBase().some(x=>x.id===id);
+}
 function filteredBase(){
-  let b = state.base || [];
+  let b = authorizedBase();
   const ft = val('filtroTarefa');
   const fc = val('filtroCompetencia');
   const fa = val('filtroAnalista');
@@ -536,6 +593,71 @@ function renderDashboard(){
   };
   el('stats').innerHTML = [`<div class="stat"><span>Total</span><b>${b.length}</b></div>`, ...STATUS.map(s => `<div class="stat status-card ${s.replaceAll(' ','_')}"><span>${labels[s] || s}</span><b>${count(s)}</b></div>`)].join('');
   table('tblDashboard',['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Analista','Status'], b.map(x=>`<tr><td>${formatCNPJ(x.cnpj)}</td><td>${esc(x.ie)}</td><td>${esc(x.razao)}</td><td>${esc(x.municipio)}</td><td>${esc(x.tarefa_nome)}</td><td>${esc(x.competencia)}</td><td>${esc(x.analista_nome||'Não distribuído')}</td><td><span class="pill ${String(x.status).replaceAll(' ','_')}">${esc(x.status)}</span></td></tr>`));
+}
+
+let gerandoRelatorioPainel = false;
+function criarPDFPainel(registros, filtros, emitidoEm = new Date()){
+  const PDF = window.jspdf?.jsPDF;
+  if(!PDF || typeof PDF.API.autoTable !== 'function') throw new Error('Bibliotecas de PDF indisponíveis. Atualize a página e tente novamente.');
+  const doc = new PDF({orientation:'landscape', unit:'mm', format:'a4'});
+  const margin = 12;
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(15);
+  doc.setTextColor(29,78,216);
+  doc.text('RELATÓRIO DE DISTRIBUIÇÃO DE ATIVIDADES', margin, 19);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.setTextColor(31,41,55);
+  const date = new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Porto_Velho',dateStyle:'short',timeStyle:'medium'}).format(emitidoEm);
+  doc.text(`Emissão: ${date} (Rondônia) | Total de registros: ${registros.length}`, margin, 27);
+  const filterLines = doc.splitTextToSize('Filtros: '+filtros.map(f=>`${f.label}: ${f.value}`).join(' | '), width-2*margin);
+  doc.text(filterLines, margin, 34);
+  const summaryY = 39 + filterLines.length*4;
+  doc.autoTable({startY:summaryY, margin:{left:margin,right:margin,bottom:18},
+    head:[['Total de atividades',...STATUS]],
+    body:[[String(registros.length),...STATUS.map(s=>String(registros.filter(x=>x.status===s).length))]],
+    theme:'grid', styles:{font:'helvetica',fontSize:8,cellPadding:2,overflow:'linebreak'},
+    headStyles:{fillColor:[29,78,216],textColor:255}, showHead:'everyPage'});
+  doc.autoTable({startY:doc.lastAutoTable.finalY+7,
+    margin:{top:12,left:margin,right:margin,bottom:18},
+    head:[['CNPJ','IE','Razão Social','Município','Tarefa','Competência','Analista','Status']],
+    body:registros.map(x=>[formatCNPJ(String(x.cnpj ?? '')),String(x.ie ?? ''),String(x.razao ?? ''),String(x.municipio ?? ''),String(x.tarefa_nome ?? ''),String(x.competencia ?? ''),String(x.analista_nome || 'Não distribuído'),String(x.status ?? '')]),
+    theme:'striped', styles:{font:'helvetica',fontSize:8,cellPadding:2,overflow:'linebreak',valign:'top'},
+    headStyles:{fillColor:[15,23,42],textColor:255}, alternateRowStyles:{fillColor:[244,246,248]},
+    columnStyles:{0:{cellWidth:33},1:{cellWidth:23},2:{cellWidth:55},3:{cellWidth:29},4:{cellWidth:39},5:{cellWidth:27},6:{cellWidth:39},7:{cellWidth:28}},
+    showHead:'everyPage', rowPageBreak:'avoid'});
+  const total = doc.internal.getNumberOfPages();
+  for(let page=1; page<=total; page++){
+    doc.setPage(page);
+    doc.setDrawColor(209,213,219);
+    doc.line(margin,height-13,width-margin,height-13);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(107,114,128);
+    doc.text('GEAR - Distribuição de Atividades - Prêmio de Produtividade', margin, height-8);
+    doc.text(`Página ${page} de ${total}`,width-margin,height-8,{align:'right'});
+  }
+  return doc;
+}
+async function gerarRelatorioPDFPainel(){
+  if(gerandoRelatorioPainel) return;
+  if(!state.authUser || !state.perfil) return msg('Entre no sistema para gerar o relatório.','error');
+  if(!dadosPainelProntos) return msg('Aguarde o carregamento completo da base. Se houve erro, atualize a página.','error');
+  const registros = filteredBase().map(x=>({...x}));
+  if(!registros.length) return msg('Nenhum registro encontrado para os filtros selecionados.','notice');
+  const filtros = [['filtroTarefa','Tarefa'],['filtroCompetencia','Competência'],['filtroAnalista','Analista'],['filtroStatus','Status']].map(([id,label])=>({label,value:val(id) ? el(id).selectedOptions[0].textContent : 'Todos'}));
+  const btn = el('btnRelatorioPainel');
+  gerandoRelatorioPainel = true;
+  btn.disabled = true; btn.textContent = 'GERANDO...';
+  try{
+    // Permite ao navegador pintar o estado do botão antes da geração síncrona.
+    await new Promise(resolve=>setTimeout(resolve,0));
+    const date = new Date();
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'America/Porto_Velho',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));
+    const filename = `relatorio_distribuicao_atividades_${parts.year}-${parts.month}-${parts.day}_${parts.hour}-${parts.minute}.pdf`;
+    criarPDFPainel(registros,filtros,date).save(filename);
+  }catch(e){ msg(esc(e.message || String(e)),'error'); }
+  finally{ gerandoRelatorioPainel = false; btn.disabled = false; btn.textContent = 'RELATÓRIO'; }
 }
 
 function renderTarefas(){
@@ -572,7 +694,7 @@ function renderAnalista(){
   const tarefaId = val('analistaTarefa');
   const competenciaFiltro = val('analistaCompetencia');
   const st = val('analistaStatus');
-  let b = state.base || [];
+  let b = authorizedBase();
 
   if (state.isAdmin) {
     // Administrador visualiza todas as distribuições por padrão.
@@ -634,7 +756,7 @@ function renderAnalista(){
 
   const resumo = document.getElementById('analistaResumoFiltro');
   if (resumo) {
-    const escopo = state.isAdmin ? 'Administrador: visualizando a base conforme filtros aplicados.' : 'Analista: visualizando apenas atividades atribuídas ao próprio e-mail.';
+    const escopo = state.isAdmin ? 'Administrador: visualizando a base conforme filtros aplicados.' : `${state.perfil?.perfil || 'Usuário'}: visualizando apenas atividades atribuídas ao próprio e-mail.`;
     resumo.textContent = `${escopo} Registros encontrados: ${b.length}.`;
   }
 
@@ -693,7 +815,7 @@ function refreshAll(){
 }
 
 function exportCSV(){
-  const b=state.isAdmin ? state.base : state.base.filter(x=>(x.analista_email||'').toLowerCase() === (state.authUser.email||'').toLowerCase());
+  const b=authorizedBase();
   const headers=['CNPJ','IE','RAZAO_SOCIAL','MUNICIPIO','TAREFA','COMPETENCIA','ANALISTA','STATUS','OBSERVACAO','DATA_DISTRIBUICAO','DATA_ATUALIZACAO'];
   const rows=b.map(x=>[formatCNPJ(x.cnpj),x.ie,x.razao,x.municipio,x.tarefa_nome,x.competencia,x.analista_nome,x.status,x.observacao,x.data_distribuicao,x.data_atualizacao]);
   const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';')).join('\n');
